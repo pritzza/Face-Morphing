@@ -17,6 +17,19 @@ def read_points(filename):
         print(f"An error occurred while reading the file: {e}")
     return np.array(points)
 
+def write_points(points, filename):
+    im_name = os.path.splitext(os.path.basename(filename))[0]
+    im_name = im_name.split('.')[0]
+    points_filename = os.path.join("points", f"{im_name}.points")
+
+    os.makedirs(os.path.dirname(points_filename), exist_ok=True)
+
+    with open(points_filename, 'w') as f:
+        for point in points:
+            f.write(f"{point[0]},{point[1]}\n")
+
+    print(f"Points saved to {points_filename}")
+
 def pick_points(im_path):
     print('Please click on the image to select points. Press Enter when finished.')
 
@@ -44,17 +57,8 @@ def pick_points(im_path):
 
     plt.close()
 
-    im_name = os.path.splitext(os.path.basename(im_path))[0]
-    im_name = im_name.split('.')[0]
-    points_filename = os.path.join("points", f"{im_name}.points")
+    write_points(points, im_path)
 
-    os.makedirs(os.path.dirname(points_filename), exist_ok=True)
-
-    with open(points_filename, 'w') as f:
-        for point in points:
-            f.write(f"{point[0]},{point[1]}\n")
-
-    print(f"Points saved to {points_filename}")
     return points
 
 def main():
