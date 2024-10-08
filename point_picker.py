@@ -1,34 +1,8 @@
 import matplotlib.pyplot as plt
-import numpy as np
 import sys
 import os
 
-def read_points(filename):
-    points = []
-    try:
-        with open(filename, 'r') as f:
-            for line in f:
-                x, y = map(float, line.strip().split(','))
-                points.append((x, y))
-        print(f"Successfully read {len(points)} points from {filename}")
-    except FileNotFoundError:
-        print(f"Error: The file '{filename}' was not found.")
-    except Exception as e:
-        print(f"An error occurred while reading the file: {e}")
-    return np.array(points)
-
-def write_points(points, filename):
-    im_name = os.path.splitext(os.path.basename(filename))[0]
-    im_name = im_name.split('.')[0]
-    points_filename = os.path.join("points", f"{im_name}.points")
-
-    os.makedirs(os.path.dirname(points_filename), exist_ok=True)
-
-    with open(points_filename, 'w') as f:
-        for point in points:
-            f.write(f"{point[0]},{point[1]}\n")
-
-    print(f"Points saved to {points_filename}")
+from point_reader import write_points
 
 def pick_points(im_path):
     print('Please click on the image to select points. Press Enter when finished.')

@@ -1,8 +1,11 @@
-import numpy as np
 import cv2
-from PIL import Image
+import numpy as np
 import os
+
+from PIL import Image
 from scipy.spatial import Delaunay
+
+from point_reader import write_points, read_points
 
 def extrapolate(a, b, factor):
     return a + factor * (b - a)
@@ -32,142 +35,33 @@ def scale_points(points, dim):
     points[:, 1] *= dim[1]
     return points
 
-def read_points(filename, dim=(1,1)):
-
-    if filename.endswith('.points'):
-        return parse_points(filename, dim)
-    elif filename.endswith('.pts'):
-        return parse_pts(filename)
-    elif filename.endswith('.asf'):
-        return parse_asf(filename, dim)
-
-    print("error: unknown file format")
-
-def parse_points(filename, dim=(1,1)):
-
-    points = []
-    try:
-        with open(filename, 'r') as f:
-            for line in f:
-                x, y = map(float, line.strip().split(','))
-                points.append((x, y))
-        print(f"Successfully read {len(points)} points from {filename}")
-    except FileNotFoundError:
-        print(f"Error: The file '{filename}' was not found.")
-    except Exception as e:
-        print(f"An error occurred while reading the file: {e}")
-
-    points = np.array(points)
-
-    # small
-    sml = 1.0 - 1e-4
-
-    # moints for corners and edge midpoints
-    extra_points = np.array([
-        [0.0, 0.0], [sml, 0.0], [0.0, sml], [sml, sml],  # corners
-        [0.5, 0.0], [0.0, 0.5], [sml, 0.5], [0.5, sml]   # edge midpoints
-    ])
-
-    # dont add duplicate points
-    for point in extra_points:
-        if not any(np.allclose(point, p) for p in points):
-            points = np.vstack([points, point])
-
-    points = scale_points(points, dim)
-
-    return points
-
-def parse_pts(file_path):
-    with open(file_path, 'r') as file:
-        content = file.read()
-    
-    lines = content.strip().split('\n')
-    coordinates = []
-    
-    for line in lines:
-        if line.startswith('version') or line.startswith('n_points') or line.startswith('{') or line.startswith('}'): 
-            continue
-        point = tuple(map(float, line.split()))
-        coordinates.append(point)
-    
-    return np.array(coordinates)
-
-def parse_asf(filename, dim=(1, 1)):
-    points = []
-    try:
-        with open(filename, 'r') as f:
-            lines = f.readlines()
-
-        # Start parsing from the 17th line onward
-        for line in lines[17:]:
-            # Split line by spaces and filter empty strings
-            data = line.strip().split()
-            if len(data) < 4:
-                continue  # Skip lines that do not contain enough data
-
-            # Extract the third and fourth values (x_rel, y_rel)
-            try:
-                x_rel = float(data[2])
-                y_rel = float(data[3])
-                points.append((x_rel, y_rel))
-            except ValueError:
-                # Handle lines that may not contain valid floats
-                continue
-
-        # Convert points to a numpy array
-        points = np.array(points)
-
-        # Optionally scale the points to the given dimensions (dim)
-        points = scale_points(points, dim)
-        print(f"Successfully read {len(points)} points from {filename}")
-
-    except FileNotFoundError:
-        print(f"Error: The file '{filename}' was not found.")
-    except Exception as e:
-        print(f"An error occurred while reading the file: {e}")
-
-    return points
-
-def write_points(points, filename):
-    im_name = os.path.splitext(os.path.basename(filename))[0]
-    im_name = im_name.split('.')[0]
-    points_filename = os.path.join("points", f"{im_name}.points")
-
-    os.makedirs(os.path.dirname(points_filename), exist_ok=True)
-
-    with open(points_filename, 'w') as f:
-        for point in points:
-            f.write(f"{point[0]},{point[1]}\n")
-
-    print(f"Points saved to {points_filename}")
-
 def warp_img(img, start_points, end_points, end_triangulation):
     img_out = img.copy()
+    
+    # warp one triangle at a time
     for simplex in end_triangulation:
+        
         start_tri = start_points[simplex]
         end_tri = end_points[simplex]
-        morph_triangle(img, img_out, start_tri, end_tri)
+
+        s_bb = cv2.boundingRect(np.float32([start_tri]))
+        e_bb = cv2.boundingRect(np.float32([end_tri]))
+
+        # adjust triangle points to bounding box coords
+        start_tri_cropped = [(start_tri[i][0] - s_bb[0], start_tri[i][1] - s_bb[1]) for i in range(3)]
+        end_tri_cropped   = [  (end_tri[i][0] - e_bb[0],   end_tri[i][1] - e_bb[1]) for i in range(3)]
+        mask = np.zeros((e_bb[3], e_bb[2], 3))
+        cv2.fillConvexPoly(mask, np.int32(end_tri_cropped), (1, 1, 1), 16, 0)
+
+        # crop img to bounding box
+        img_cropped = img[s_bb[1]:s_bb[1] + s_bb[3], s_bb[0]:s_bb[0] + s_bb[2]]
+        img_warped = affine_transform(img_cropped, start_tri_cropped, end_tri_cropped, (e_bb[2], e_bb[3]))
+
+        # blend
+        img_out[e_bb[1]:e_bb[1]+e_bb[3], e_bb[0]:e_bb[0]+e_bb[2]] = \
+            img_out[e_bb[1]:e_bb[1]+e_bb[3], e_bb[0]:e_bb[0]+e_bb[2]] * (1 - mask) + img_warped * mask
+
     return img_out
-
-def morph_triangle(img, img_out, start_tri, end_tri):
-
-    s_bb = cv2.boundingRect(np.float32([start_tri]))
-    e_bb = cv2.boundingRect(np.float32([end_tri]))
-
-    # adjust triangle points to bounding box coords
-    start_tri_cropped = [(start_tri[i][0] - s_bb[0], start_tri[i][1] - s_bb[1]) for i in range(3)]
-    end_tri_cropped   = [(end_tri[i][0] - e_bb[0], end_tri[i][1] - e_bb[1])     for i in range(3)]
-
-    mask = np.zeros((e_bb[3], e_bb[2], 3))
-    cv2.fillConvexPoly(mask, np.int32(end_tri_cropped), (1., 1., 1.), 16, 0)
-
-    # crop img to bounding box
-    img_cropped = img[s_bb[1]:s_bb[1] + s_bb[3], s_bb[0]:s_bb[0] + s_bb[2]]
-    img_warped = affine_transform(img_cropped, start_tri_cropped, end_tri_cropped, (e_bb[2], e_bb[3]))
-
-    # blend
-    img_out[e_bb[1]:e_bb[1]+e_bb[3], e_bb[0]:e_bb[0]+e_bb[2]] = \
-        img_out[e_bb[1]:e_bb[1]+e_bb[3], e_bb[0]:e_bb[0]+e_bb[2]] * (1 - mask) + img_warped * mask
 
 def get_affine_transform(start_tri, end_tri):
 
@@ -314,8 +208,7 @@ def main():
         compute_average_face(BR_PATH, BR_DIM, 'avg_face')
 
     if WARP_TO_AVG:
-        warp_to_average_face(
-                                'res/me.png', 
+        warp_to_average_face('res/me.png', 
                                 'res/avg_happy_man.jpg', 
                                 'points/me.points', 
                                 'points/avg_happy_man.points', 

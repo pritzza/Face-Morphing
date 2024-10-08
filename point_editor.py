@@ -1,76 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import sys
 import os
-import numpy as np
+import sys
 
-def read_points(filename, dim=(1,1)):
-
-    if filename.endswith('.points'):
-        return parse_points(filename, dim)
-    elif filename.endswith('.pts'):
-        return parse_pts(filename)
-
-    print("error: unknown file format")
-
-def parse_points(filename, dim=(1,1)):
-
-    points = []
-    try:
-        with open(filename, 'r') as f:
-            for line in f:
-                x, y = map(float, line.strip().split(','))
-                points.append((x, y))
-        print(f"Successfully read {len(points)} points from {filename}")
-    except FileNotFoundError:
-        print(f"Error: The file '{filename}' was not found.")
-    except Exception as e:
-        print(f"An error occurred while reading the file: {e}")
-
-    # Convert points to numpy array for efficient operations
-    points = np.array(points)
-
-    # Scale points to image dimensions
-    points[:, 0] *= dim[0]
-    points[:, 1] *= dim[1]
-    
-    return points
-
-
-def parse_pts(file_path):
-    with open(file_path, 'r') as file:
-        content = file.read()
-    
-    lines = content.strip().split('\n')
-    coordinates = []
-    
-    for line in lines:
-        if line.startswith('version') or line.startswith('n_points') or line.startswith('{') or line.startswith('}'): 
-            continue
-        point = tuple(map(float, line.split()))
-        coordinates.append(point)
-    
-    print(coordinates)
-
-    return np.array(coordinates)
-
-# Example usage:
-# file_path = 'path/to/your/file.txt'
-# coordinates = read_coordinates_file(file_path)
-# print(coordinates)
-
-def write_points(points, filename):
-    im_name = os.path.splitext(os.path.basename(filename))[0]
-    im_name = im_name.split('.')[0]
-    points_filename = os.path.join("points", f"{im_name}.points")
-
-    os.makedirs(os.path.dirname(points_filename), exist_ok=True)
-
-    with open(points_filename, 'w') as f:
-        for point in points:
-            f.write(f"{point[0]},{point[1]}\n")
-
-    print(f"Points saved to {points_filename}")
+from point_reader import write_points, read_points
 
 class PointEditor:
     def __init__(self, image_path, points):
